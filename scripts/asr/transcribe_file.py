@@ -5,6 +5,7 @@ import argparse
 
 import asyncio
 import os
+from typing import AsyncIterable
 import riva.client
 from riva.client.argparse_utils import add_asr_config_argparse_parameters, add_connection_argparse_parameters
 
@@ -60,6 +61,20 @@ def parse_args() -> argparse.Namespace:
         import riva.client.audio_io
     return args
 
+async def get_wav_bytes(file_path: str, chunk_size: int = 8192) -> AsyncIterable[bytes]:
+    """
+    Read a WAV file and yield its contents as bytes chunks asynchronously.
+    
+    Args:
+        file_path: Path to the WAV file
+        chunk_size: Size of each chunk in bytes (default: 8192)
+    
+    Yields:
+        Chunks of bytes from the WAV file
+    """
+    async with await asyncio.open(file_path, mode='rb') as file:
+        while chunk := await file.read(chunk_size):
+            yield chunk
 
 async def main() -> None:
     args = parse_args()
@@ -133,7 +148,7 @@ async def main() -> None:
                 print(asr_models)
                 return
             
-            with riva.client.AudioChunkFileIterator(
+            async with riva.client.AsyncAudioChunkFileIterator(
                 args.input_file,
                 args.file_streaming_chunk,
                 delay_callback,

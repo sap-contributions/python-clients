@@ -8,7 +8,7 @@ import time
 import warnings
 import wave
 from pathlib import Path
-from typing import AsyncGenerator, AsyncIterable, Callable, Dict, Generator, Iterable, List, Optional, TextIO, Union
+from typing import AsyncGenerator, AsyncIterable, AsyncIterator, Callable, Dict, List, Optional, TextIO, Union
 
 from grpc._channel import _MultiThreadedRendezvous
 
@@ -87,6 +87,64 @@ class AudioChunkFileIterator:
                 data[offset:], (len(data) - offset) / self.file_parameters['sampwidth'] / self.file_parameters['framerate']
             )
             self.first_buffer = False
+        return data
+
+
+class AsyncAudioChunkFileIterator:
+    def __init__(
+        self,
+        input_file: Union[str, os.PathLike],
+        chunk_n_frames: int,
+        delay_callback: Optional[Callable[[bytes, float], None]] = None,
+    ) -> None:
+        self.input_file: Path = Path(input_file).expanduser()
+        self.chunk_n_frames = chunk_n_frames
+        self.delay_callback = delay_callback
+        self.file_parameters = get_wav_file_parameters(self.input_file)
+        self.file_object: Optional[typing.BinaryIO] = None
+        if self.delay_callback and self.file_parameters is None:
+            warnings.warn("delay_callback not supported for encoding other than LINEAR_PCM")
+            self.delay_callback = None
+        self.first_buffer = True
+
+    async def __aenter__(self):
+        self.file_object = open(str(self.input_file), 'rb')
+        return self
+
+    async def __aexit__(self, type_, value, traceback) -> None:
+        if self.file_object is not None:
+            self.file_object.close()
+            self.file_object = None
+
+    async def close(self) -> None:
+        if self.file_object is not None:
+            self.file_object.close()
+            self.file_object = None
+
+    def __aiter__(self) -> AsyncIterator[bytes]:
+        return self
+
+    async def __anext__(self) -> bytes:
+        if self.file_object is None:
+            self.file_object = open(str(self.input_file), 'rb')
+            
+        if self.file_parameters:
+            data = self.file_object.read(self.chunk_n_frames * self.file_parameters['sampwidth'] * self.file_parameters['nchannels'])
+        else:
+            data = self.file_object.read(self.chunk_n_frames)
+
+        if not data:
+            await self.close()
+            raise StopAsyncIteration
+
+        if self.delay_callback is not None:
+            offset = self.file_parameters['data_offset'] if self.first_buffer else 0
+            self.delay_callback(
+                data[offset:], 
+                (len(data) - offset) / self.file_parameters['sampwidth'] / self.file_parameters['framerate']
+            )
+            self.first_buffer = False
+
         return data
 
 
@@ -329,11 +387,11 @@ def print_offline(response: rasr.RecognizeResponse) -> None:
         print("Final transcript:", final_transcript)
 
 
-def streaming_request_generator(
-    audio_chunks: Iterable[bytes], streaming_config: rasr.StreamingRecognitionConfig
-) -> Generator[rasr.StreamingRecognizeRequest, None, None]:
+async def streaming_request_generator(
+    audio_chunks: AsyncIterable[bytes], streaming_config: rasr.StreamingRecognitionConfig
+) -> AsyncGenerator[rasr.StreamingRecognizeRequest, None]:
     yield rasr.StreamingRecognizeRequest(streaming_config=streaming_config)
-    for chunk in audio_chunks:
+    async for chunk in audio_chunks:
         yield rasr.StreamingRecognizeRequest(audio_content=chunk)
 
 
@@ -351,7 +409,7 @@ class ASRService:
         self.stub = rasr_srv.RivaSpeechRecognitionStub(self.auth.channel)
 
     async def streaming_response_generator(
-        self, audio_chunks: Iterable[bytes], streaming_config: rasr.StreamingRecognitionConfig
+        self, audio_chunks: AsyncIterable[bytes], streaming_config: rasr.StreamingRecognitionConfig
     ) -> AsyncGenerator[rasr.StreamingRecognizeResponse, None]:
         """
         Generates speech recognition responses for fragments of speech audio in :param:`audio_chunks`.

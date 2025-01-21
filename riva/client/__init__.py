@@ -3,6 +3,7 @@
 
 from riva.client.asr import (
     AudioChunkFileIterator,
+    AsyncAudioChunkFileIterator,
     ASRService,
     add_audio_file_specs_to_config,
     add_word_boosting_to_config,
