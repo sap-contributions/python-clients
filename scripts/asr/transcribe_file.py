@@ -3,6 +3,7 @@
 
 import argparse
 
+import asyncio
 import os
 import riva.client
 from riva.client.argparse_utils import add_asr_config_argparse_parameters, add_connection_argparse_parameters
@@ -60,28 +61,10 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def main() -> None:
+async def main() -> None:
     args = parse_args()
     if args.list_devices:
         riva.client.audio_io.list_output_devices()
-        return
-    auth = riva.client.Auth(args.ssl_cert, args.use_ssl, args.server, args.metadata)
-    asr_service = riva.client.ASRService(auth)
-
-    if args.list_models:
-        asr_models = dict()
-        config_response = asr_service.stub.GetRivaSpeechRecognitionConfig(riva.client.proto.riva_asr_pb2.RivaSpeechRecognitionConfigRequest())
-        for model_config in config_response.model_config:
-            if model_config.parameters["streaming"] and model_config.parameters["type"]:
-                language_code = model_config.parameters['language_code']
-                if language_code in asr_models:
-                    asr_models[language_code]["models"].append(model_config.model_name)
-                else:
-                    asr_models[language_code] = {"models": [model_config.model_name]}
-
-        print("Available ASR models")
-        asr_models = dict(sorted(asr_models.items()))
-        print(asr_models)
         return
 
     if not os.path.isfile(args.input_file):
@@ -122,22 +105,51 @@ def main() -> None:
             )
             delay_callback = sound_callback
         else:
-            delay_callback = riva.client.sleep_audio_length if args.simulate_realtime else None
-        with riva.client.AudioChunkFileIterator(
-            args.input_file, args.file_streaming_chunk, delay_callback,
-        ) as audio_chunk_iterator:
-            riva.client.print_streaming(
-                responses=asr_service.streaming_response_generator(
-                    audio_chunks=audio_chunk_iterator,
-                    streaming_config=config,
-                ),
-                show_intermediate=args.show_intermediate,
-                additional_info="confidence" if args.print_confidence else "no",
+            delay_callback = (
+                riva.client.sleep_audio_length if args.simulate_realtime else None
             )
+
+        async with riva.client.Auth(
+            args.ssl_cert,
+            args.use_ssl,
+            args.server,
+            args.metadata,
+        ) as auth:
+            asr_service = riva.client.ASRService(auth)
+
+            if args.list_models:
+                asr_models = dict()
+                config_response = asr_service.stub.GetRivaSpeechRecognitionConfig(riva.client.proto.riva_asr_pb2.RivaSpeechRecognitionConfigRequest())
+                for model_config in config_response.model_config:
+                    if model_config.parameters["streaming"] and model_config.parameters["type"]:
+                        language_code = model_config.parameters['language_code']
+                        if language_code in asr_models:
+                            asr_models[language_code]["models"].append(model_config.model_name)
+                        else:
+                            asr_models[language_code] = {"models": [model_config.model_name]}
+
+                print("Available ASR models")
+                asr_models = dict(sorted(asr_models.items()))
+                print(asr_models)
+                return
+            
+            with riva.client.AudioChunkFileIterator(
+                args.input_file,
+                args.file_streaming_chunk,
+                delay_callback,
+            ) as audio_chunk_iterator:
+                await riva.client.print_streaming(
+                    responses=asr_service.streaming_response_generator(
+                        audio_chunks=audio_chunk_iterator,
+                        streaming_config=config,
+                    ),
+                    show_intermediate=args.show_intermediate,
+                    additional_info="confidence" if args.print_confidence else "no",
+                )
     finally:
         if sound_callback is not None and sound_callback.opened:
             sound_callback.close()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

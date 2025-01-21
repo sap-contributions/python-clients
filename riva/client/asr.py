@@ -8,7 +8,7 @@ import time
 import warnings
 import wave
 from pathlib import Path
-from typing import Callable, Dict, Generator, Iterable, List, Optional, TextIO, Union
+from typing import AsyncGenerator, AsyncIterable, Callable, Dict, Generator, Iterable, List, Optional, TextIO, Union
 
 from grpc._channel import _MultiThreadedRendezvous
 
@@ -176,8 +176,8 @@ def add_custom_configuration_to_config(
 PRINT_STREAMING_ADDITIONAL_INFO_MODES = ['no', 'time', 'confidence']
 
 
-def print_streaming(
-    responses: Iterable[rasr.StreamingRecognizeResponse],
+async def print_streaming(
+    responses: AsyncIterable[rasr.StreamingRecognizeResponse],
     output_file: Optional[Union[Union[os.PathLike, str, TextIO], List[Union[os.PathLike, str, TextIO]]]] = None,
     additional_info: str = 'no',
     word_time_offsets: bool = False,
@@ -243,7 +243,7 @@ def print_streaming(
                 output_file[i] = Path(elem).expanduser().open(file_mode)
         start_time = time.time()  # used in 'time` additional_info
         num_chars_printed = 0  # used in 'no' additional_info
-        for response in responses:
+        async for response in responses:
             if not response.results:
                 continue
             partial_transcript = ""
@@ -350,9 +350,9 @@ class ASRService:
         self.auth = auth
         self.stub = rasr_srv.RivaSpeechRecognitionStub(self.auth.channel)
 
-    def streaming_response_generator(
+    async def streaming_response_generator(
         self, audio_chunks: Iterable[bytes], streaming_config: rasr.StreamingRecognitionConfig
-    ) -> Generator[rasr.StreamingRecognizeResponse, None, None]:
+    ) -> AsyncGenerator[rasr.StreamingRecognizeResponse, None]:
         """
         Generates speech recognition responses for fragments of speech audio in :param:`audio_chunks`.
         The purpose of the method is to perform speech recognition "online" - as soon as
@@ -390,7 +390,7 @@ class ASRService:
             <https://docs.nvidia.com/deeplearning/riva/user-guide/docs/reference/protos/protos.html#riva-proto-riva-asr-proto>`_.
         """
         generator = streaming_request_generator(audio_chunks, streaming_config)
-        for response in self.stub.StreamingRecognize(generator, metadata=self.auth.get_auth_metadata()):
+        async for response in self.stub.StreamingRecognize(generator, metadata=self.auth.get_auth_metadata()):
             yield response
 
     def offline_recognize(

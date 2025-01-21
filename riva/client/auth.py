@@ -9,7 +9,7 @@ import grpc
 
 def create_channel(
     ssl_cert: Optional[Union[str, os.PathLike]] = None, use_ssl: bool = False, uri: str = "localhost:50051", metadata: Optional[List[Tuple[str, str]]] = None,
-) -> grpc.Channel:
+) -> grpc.aio.Channel:
 
     def metadata_callback(context, callback):
         callback(metadata, None)
@@ -24,9 +24,9 @@ def create_channel(
         if metadata:
             auth_creds = grpc.metadata_call_credentials(metadata_callback)
             creds = grpc.composite_channel_credentials(creds, auth_creds)
-        channel = grpc.secure_channel(uri, creds)
+        channel = grpc.aio.secure_channel(uri, creds)
     else:
-        channel = grpc.insecure_channel(uri)
+        channel = grpc.aio.insecure_channel(uri)
     return channel
 
 
@@ -57,7 +57,35 @@ class Auth:
                 if len(meta) != 2:
                     raise ValueError(f"Metadata should have 2 parameters in \"key\" \"value\" pair. Receieved {len(meta)} parameters.")
                 self.metadata.append(tuple(meta))
-        self.channel: grpc.Channel = create_channel(self.ssl_cert, self.use_ssl, self.uri, self.metadata)
+        self._channel: Optional[grpc.aio.Channel] = None
+        self._in_context = False
+
+    @property
+    def channel(self) -> grpc.aio.Channel:
+        if not self._in_context:
+            raise RuntimeError("Auth must be used within an async context manager ('async with Auth() as auth:')")
+        if self._channel is None:
+            raise RuntimeError("Channel not initialized - this should not happen when used with context manager")
+        return self._channel
+
+    def __enter__(self):
+        raise TypeError("Auth requires async context manager. Use 'async with' instead of 'with'")
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        raise TypeError("Auth requires async context manager. Use 'async with' instead of 'with'")
+    
+    async def __aenter__(self):
+        # Async gRPC channel only works when used within the same event loop so
+        # we force the user to use it within an async context manager.
+        self._channel = create_channel(self.ssl_cert, self.use_ssl, self.uri, self.metadata)
+        self._in_context = True
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self._channel:
+            await self.channel.close()
+        self._in_context = False
+        self._channel = None
 
     def get_auth_metadata(self) -> List[Tuple[str, str]]:
         """
