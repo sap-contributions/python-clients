@@ -95,17 +95,18 @@ class BuildPyCommand(build_py):
                         'grpc_tools.protoc',
                         '-I=' + str(setup_py_dir / 'common'),
                         '--python_out=' + str(target_dir),
+                        '--pyi_out=' + str(target_dir),
                         '--grpc_python_out=' + str(target_dir),
                         proto,
                     ]
                 )
-            for fn in glob(str(target_dir / 'riva/proto/*_pb2*.py')):
+            for fn in glob(str(target_dir / 'riva/proto/*_pb2*.py*')):
                 with open(fn) as f:
                     text = f.read()
                 with open(fn, 'w') as f:
                     f.write(CHANGE_PB2_LOC_PATTERN.sub(r'from . import \1', text))
             # Move Python files to riva/client
-            for f in glob(str(target_dir / 'riva/proto/*.py')):
+            for f in glob(str(target_dir / 'riva/proto/*.py*')):
                 shutil.move(f, target_dir)
             # Remove leftover empty dirs
             shutil.rmtree(target_dir / 'riva/proto')
