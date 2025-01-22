@@ -183,6 +183,9 @@ tests/integration/asr/outputs
 tests/integration/nlp/outputs
 tests/integration/tts/outputs
 
-riva/client/proto/*_pb2.py
+riva/client/proto/*_pb2.py*
 riva/client/proto/*_pb2_grpc.py
+
+# Mac specific files
+.DS_Store
 
