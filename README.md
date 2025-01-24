@@ -1,4 +1,9 @@
 [![License](https://img.shields.io/badge/license-MIT-green)](https://opensource.org/licenses/MIT)
+## 🚧 Status 🚧
+This repo serves as a demonstration of how NVIDIA Riva can be called using asynchronous gRPC operations. The primary channel creation has been entirely replaced with async channels without the option to fall back to sync. [As async gRPC API object may only be used on the thread on which they were created](https://grpc.github.io/grpc/python/grpc_asyncio.html#caveats), the respective interfaces have been designed to force an implementation using `async with`.
+
+Furthermore, the [`scripts/asr/transcribe_file.py`](scripts/asr/transcribe_file) file has been adapted to showcase the async usage of the adapted API.
+
 # NVIDIA Riva Clients (with async gRPC)
 
 NVIDIA Riva is a GPU-accelerated SDK for building Speech AI applications that are customized for your use 
